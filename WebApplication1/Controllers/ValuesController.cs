@@ -7,71 +7,81 @@ namespace WebApplication1.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class HomeController : Controller
+    public class HomeController : ControllerBase
     {
-        private ISRPO4Context? _db;
-        public HomeController(ISRPO4Context appDBContext)
+        private readonly ISRPO4Context _db;
+
+        public HomeController(ISRPO4Context db)
         {
-            _db = appDBContext;
-            if (!_db.Customers.Any())
-            {
-                _db.Customers.Add(new Customer {Id = 1, Name = "Tom", Number = "2" });
-                _db.Customers.Add(new Customer { Name = "Alice", Number = "31" });
-                _db.SaveChanges();
-            }
+            _db = db;
+        }
+
+        [HttpGet]
+        public async Task<ActionResult<List<Customer>>> GetAll()
+        {
+            var customers = await _db.Customers.ToListAsync();
+            return Ok(customers);
         }
 
         [HttpPost]
-        public async Task<ActionResult<Customer>> Post(Customer user)
+        public async Task<ActionResult<Customer>> Create(Customer customer)
         {
-            if (user == null)
+            var maxId = await _db.Customers.MaxAsync(c => (int?)c.Id) ?? 0;
+            customer.Id = maxId + 1;
+            _db.Customers.Add(customer);
+            await _db.SaveChangesAsync();
+
+            return CreatedAtAction(nameof(GetAll), new { id = customer.Id }, customer);
+        }
+
+
+        [HttpPut("{id}")]
+        public async Task<ActionResult> Update(int id, Customer customer)
+        {
+            if (id != customer.Id)
             {
                 return BadRequest();
             }
 
-            _db.Customers.Add(user);
-            await _db.SaveChangesAsync();
-            return Ok(user);
-        }
+            _db.Entry(customer).State = EntityState.Modified;
 
-        [HttpPut]
-        public async Task<ActionResult<Customer>> Put(Customer user)
-        {
-            if (user == null)
+            try
             {
-                return BadRequest();
+                await _db.SaveChangesAsync();
             }
-            if (!_db.Customers.Any(x => x.Id == user.Id))
+            catch (DbUpdateConcurrencyException)
             {
-                return NotFound();
+                if (!CustomerExists(id))
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    throw;
+                }
             }
 
-            _db.Update(user);
-            await _db.SaveChangesAsync();
-            return Ok(user);
-        }
-
-        [HttpGet("{id}")]
-/*        [Route("/getCustomer")]
-*/        public async Task<ActionResult<IEnumerable<Customer>>> Get(int id)
-        {
-            Customer user = await _db.Customers.FirstOrDefaultAsync(x => x.Id == id);
-            if (user == null)
-                return NotFound();
-            return new ObjectResult(user);
+            return NoContent();
         }
 
         [HttpDelete("{id}")]
-        public async Task<ActionResult<Customer>> Delete(int id)
+        public async Task<ActionResult> Delete(int id)
         {
-            Customer user = _db.Customers.FirstOrDefault(x => x.Id == id);
-            if (user == null)
+            var customer = await _db.Customers.FindAsync(id);
+            if (customer == null)
             {
                 return NotFound();
             }
-            _db.Customers.Remove(user);
+
+            _db.Customers.Remove(customer);
             await _db.SaveChangesAsync();
-            return Ok(user);
+
+            return NoContent();
+        }
+
+        private bool CustomerExists(int id)
+        {
+            return _db.Customers.Any(e => e.Id == id);
         }
     }
 }
